@@ -719,6 +719,7 @@ const getOpenClawConfigSync = (): OpenClawConfigSync => {
     openClawConfigSync = new OpenClawConfigSync({
       engineManager: getOpenClawEngineManager(),
       getCoworkConfig: () => getCoworkStore().getConfig(),
+      getSkillsPrompt: () => getSkillManager().buildAutoRoutingPrompt(),
       getTelegramOpenClawConfig: () => {
         try {
           return getIMGatewayManager()?.getConfig()?.telegram ?? null;
@@ -3611,6 +3612,14 @@ if (!gotTheLock) {
     console.log('[Main] initApp: setStoreGetter done');
     const manager = getSkillManager();
     console.log('[Main] initApp: getSkillManager done');
+
+    // When skills change (install/enable/disable/delete), re-sync AGENTS.md
+    // so OpenClaw's IM channel agents pick up the latest skill list.
+    manager.onSkillsChanged(() => {
+      syncOpenClawConfig({ reason: 'skills-changed' }).catch((error) => {
+        console.warn('[Main] Failed to sync OpenClaw config after skills change:', error);
+      });
+    });
 
     // Non-critical: sync bundled skills to user data.
     // Wrapped in try-catch so a failure here does not block window creation.

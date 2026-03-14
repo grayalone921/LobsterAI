@@ -947,6 +947,7 @@ const isWebSearchSkillBroken = (skillRoot: string): boolean => {
 export class SkillManager {
   private watchers: fs.FSWatcher[] = [];
   private notifyTimer: NodeJS.Timeout | null = null;
+  private changeListeners: Array<() => void> = [];
 
   constructor(private getStore: () => SqliteStore) {}
 
@@ -1383,6 +1384,18 @@ export class SkillManager {
         win.webContents.send('skills:changed');
       }
     });
+    // Notify external listeners (e.g. OpenClaw AGENTS.md sync)
+    for (const listener of this.changeListeners) {
+      try {
+        listener();
+      } catch (error) {
+        console.warn('[skills] onSkillsChanged listener error:', error);
+      }
+    }
+  }
+
+  onSkillsChanged(listener: () => void): void {
+    this.changeListeners.push(listener);
   }
 
   private parseSkillDir(

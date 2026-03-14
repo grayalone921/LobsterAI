@@ -65,6 +65,7 @@ type OpenClawConfigSyncDeps = {
   getQQConfig: () => QQOpenClawConfig | null;
   getWecomConfig: () => WecomOpenClawConfig | null;
   getMcpBridgeConfig?: () => McpBridgeConfig | null;
+  getSkillsPrompt?: () => string | null;
 };
 
 export class OpenClawConfigSync {
@@ -77,6 +78,7 @@ export class OpenClawConfigSync {
   private readonly getQQConfig: () => QQOpenClawConfig | null;
   private readonly getWecomConfig: () => WecomOpenClawConfig | null;
   private readonly getMcpBridgeConfig?: () => McpBridgeConfig | null;
+  private readonly getSkillsPrompt?: () => string | null;
 
   constructor(deps: OpenClawConfigSyncDeps) {
     this.engineManager = deps.engineManager;
@@ -88,6 +90,7 @@ export class OpenClawConfigSync {
     this.getQQConfig = deps.getQQConfig;
     this.getWecomConfig = deps.getWecomConfig;
     this.getMcpBridgeConfig = deps.getMcpBridgeConfig;
+    this.getSkillsPrompt = deps.getSkillsPrompt;
   }
 
   sync(reason: string): OpenClawConfigSyncResult {
@@ -429,31 +432,119 @@ export class OpenClawConfigSync {
       currentContent = '';
     }
 
-    if (currentContent === nextContent) {
-      return {
-        ok: true,
-        changed: false,
-        configPath,
-      };
+    const configChanged = currentContent !== nextContent;
+
+    if (configChanged) {
+      try {
+        ensureDir(path.dirname(configPath));
+        const tmpPath = `${configPath}.tmp-${Date.now()}`;
+        fs.writeFileSync(tmpPath, nextContent, 'utf8');
+        fs.renameSync(tmpPath, configPath);
+      } catch (error) {
+        return {
+          ok: false,
+          changed: false,
+          configPath,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
     }
 
+    // Sync AGENTS.md with skills routing prompt to the OpenClaw workspace directory.
+    // This runs on every sync regardless of openclaw.json changes, because skills
+    // may have been installed/enabled/disabled independently.
+    const resolvedWorkspaceDir = workspaceDir || path.join(app.getPath('home'), '.openclaw', 'workspace');
+    this.syncAgentsMd(resolvedWorkspaceDir, coworkConfig);
+
+    return {
+      ok: true,
+      changed: configChanged,
+      configPath,
+    };
+  }
+
+  /**
+   * Sync AGENTS.md to the OpenClaw workspace directory.
+   * Embeds the skills routing prompt and system prompt so that OpenClaw's
+   * native channel connectors (DingTalk, Feishu, etc.) can discover and
+   * invoke LobsterAI skills.
+   */
+  private syncAgentsMd(workspaceDir: string, coworkConfig: CoworkConfig): void {
+    const MARKER = '<!-- LobsterAI managed: do not edit below this line -->';
+
     try {
-      ensureDir(path.dirname(configPath));
-      const tmpPath = `${configPath}.tmp-${Date.now()}`;
-      fs.writeFileSync(tmpPath, nextContent, 'utf8');
-      fs.renameSync(tmpPath, configPath);
-      return {
-        ok: true,
-        changed: true,
-        configPath,
-      };
+      ensureDir(workspaceDir);
+      const agentsMdPath = path.join(workspaceDir, 'AGENTS.md');
+
+      // Build the managed section
+      const sections: string[] = [];
+
+      // Add system prompt if configured
+      const systemPrompt = (coworkConfig.systemPrompt || '').trim();
+      if (systemPrompt) {
+        sections.push(`## System Prompt\n\n${systemPrompt}`);
+      }
+
+      // Add skills routing prompt
+      const skillsPrompt = this.getSkillsPrompt?.();
+      if (skillsPrompt) {
+        sections.push(skillsPrompt);
+      }
+
+      if (sections.length === 0) {
+        // No managed content — remove the managed section from AGENTS.md if present,
+        // but don't delete the file (user may have their own content).
+        try {
+          const existing = fs.readFileSync(agentsMdPath, 'utf8');
+          const markerIdx = existing.indexOf(MARKER);
+          if (markerIdx >= 0) {
+            const userContent = existing.slice(0, markerIdx).trimEnd();
+            if (userContent) {
+              fs.writeFileSync(agentsMdPath, userContent + '\n', 'utf8');
+            } else {
+              fs.unlinkSync(agentsMdPath);
+            }
+          }
+        } catch {
+          // File doesn't exist or can't be read — nothing to clean up.
+        }
+        return;
+      }
+
+      const managedContent = `${MARKER}\n\n${sections.join('\n\n')}`;
+
+      // Preserve user content above the marker
+      let userContent = '';
+      try {
+        const existing = fs.readFileSync(agentsMdPath, 'utf8');
+        const markerIdx = existing.indexOf(MARKER);
+        if (markerIdx >= 0) {
+          userContent = existing.slice(0, markerIdx).trimEnd();
+        } else {
+          // No marker found — entire file is user content
+          userContent = existing.trimEnd();
+        }
+      } catch {
+        // File doesn't exist yet — no user content.
+      }
+
+      const nextContent = userContent
+        ? `${userContent}\n\n${managedContent}\n`
+        : `${managedContent}\n`;
+
+      // Only write if content actually changed
+      let currentContent = '';
+      try {
+        currentContent = fs.readFileSync(agentsMdPath, 'utf8');
+      } catch {
+        currentContent = '';
+      }
+
+      if (currentContent === nextContent) return;
+
+      fs.writeFileSync(agentsMdPath, nextContent, 'utf8');
     } catch (error) {
-      return {
-        ok: false,
-        changed: false,
-        configPath,
-        error: error instanceof Error ? error.message : String(error),
-      };
+      console.warn('[OpenClawConfigSync] Failed to sync AGENTS.md:', error);
     }
   }
 
