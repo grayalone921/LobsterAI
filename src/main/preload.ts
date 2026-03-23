@@ -373,7 +373,7 @@ contextBridge.exposeInMainWorld('electron', {
     send: (status: 'online' | 'offline') => ipcRenderer.send('network:status-change', status),
   },
   auth: {
-    login: () => ipcRenderer.invoke('auth:login'),
+    login: (loginUrl?: string) => ipcRenderer.invoke('auth:login', { loginUrl }),
     exchange: (code: string) => ipcRenderer.invoke('auth:exchange', { code }),
     getUser: () => ipcRenderer.invoke('auth:getUser'),
     getQuota: () => ipcRenderer.invoke('auth:getQuota'),

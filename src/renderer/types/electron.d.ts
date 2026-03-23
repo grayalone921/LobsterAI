@@ -455,7 +455,7 @@ interface IElectronAPI {
     requestCalendar: () => Promise<{ success: boolean; granted?: boolean; status?: string; error?: string }>;
   };
   auth: {
-    login: () => Promise<{ success: boolean; error?: string }>;
+    login: (loginUrl?: string) => Promise<{ success: boolean; error?: string }>;
     exchange: (code: string) => Promise<{ success: boolean; user?: any; quota?: any; error?: string }>;
     getUser: () => Promise<{ success: boolean; user?: any; quota?: any }>;
     getQuota: () => Promise<{ success: boolean; quota?: any }>;

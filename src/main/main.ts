@@ -55,7 +55,7 @@ import { CronJobService } from './libs/cronJobService';
 import { migrateScheduledTasksToOpenclaw, migrateScheduledTaskRunsToOpenclaw } from './libs/migrateScheduledTasks';
 import { buildScheduledTaskEnginePrompt } from './libs/scheduledTaskEnginePrompt';
 import { McpServerManager } from './libs/mcpServerManager';
-import { getServerApiBaseUrl, getLoginUrl, fetchLoginUrlFromOvermind } from './libs/endpoints';
+import { getServerApiBaseUrl, refreshEndpointsTestMode } from './libs/endpoints';
 import { McpBridgeServer } from './libs/mcpBridgeServer';
 import type { McpBridgeConfig } from './libs/openclawConfigSync';
 import { downloadUpdate, installUpdate, cancelActiveDownload } from './libs/appUpdateInstaller';
@@ -1628,6 +1628,7 @@ if (!gotTheLock) {
   ipcMain.handle('store:set', async (_event, key, value) => {
     getStore().set(key, value);
     if (key === 'app_config') {
+      refreshEndpointsTestMode(getStore());
       const syncResult = await syncOpenClawConfig({
         reason: 'app-config-change',
         restartGatewayIfRunning: false,
@@ -1883,10 +1884,11 @@ if (!gotTheLock) {
     };
   };
 
-  ipcMain.handle('auth:login', async () => {
+  ipcMain.handle('auth:login', async (_event, { loginUrl }: { loginUrl?: string } = {}) => {
     try {
-      const loginUrl = `${getLoginUrl()}?source=electron`;
-      await shell.openExternal(loginUrl);
+      const baseUrl = loginUrl || `${getServerApiBaseUrl()}/login`;
+      const finalUrl = `${baseUrl}?source=electron`;
+      await shell.openExternal(finalUrl);
       return { success: true };
     } catch (error) {
       console.error('[Auth] login failed:', error);
@@ -4214,6 +4216,7 @@ if (!gotTheLock) {
     console.log('[Main] initApp: starting initStore()');
     store = await initStore();
     console.log('[Main] initApp: store initialized');
+    refreshEndpointsTestMode(store);
 
     // Defensive recovery: app may be force-closed during execution and leave
     // stale running flags in DB. Normalize them on startup.
@@ -4297,9 +4300,6 @@ if (!gotTheLock) {
     console.log('[Main] initApp: setStoreGetter done');
     const manager = getSkillManager();
     console.log('[Main] initApp: getSkillManager done');
-
-    // Fetch login URL from overmind (non-blocking, same timing as skills init)
-    fetchLoginUrlFromOvermind();
 
     // When skills change (install/enable/disable/delete), re-sync AGENTS.md
     // so OpenClaw's IM channel agents pick up the latest skill list.
