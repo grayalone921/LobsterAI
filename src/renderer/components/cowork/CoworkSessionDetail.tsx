@@ -9,12 +9,12 @@ import CoworkPromptInput from './CoworkPromptInput';
 import MarkdownContent from '../MarkdownContent';
 import {
   CheckIcon,
-  InformationCircleIcon,
   ShareIcon,
-  ExclamationTriangleIcon,
   ChevronRightIcon,
   PhotoIcon,
 } from '@heroicons/react/24/outline';
+import InformationCircleIcon from '../icons/InformationCircleIcon';
+import ExclamationTriangleIcon from '../icons/ExclamationTriangleIcon';
 import { FolderIcon } from '@heroicons/react/24/solid';
 import { coworkService } from '../../services/cowork';
 import SidebarToggleIcon from '../icons/SidebarToggleIcon';
@@ -1135,6 +1135,7 @@ export const AssistantTurnBlock: React.FC<{
   const visibleAssistantItems = getVisibleAssistantItems(turn.assistantItems);
 
   const renderSystemMessage = (message: CoworkMessage) => {
+    const isError = !hasText(message.content) && typeof message.metadata?.error === 'string';
     const rawContent = hasText(message.content)
       ? message.content
       : (typeof message.metadata?.error === 'string' ? message.metadata.error : '');
@@ -1144,8 +1145,11 @@ export const AssistantTurnBlock: React.FC<{
 
     return (
       <div className="rounded-lg border dark:border-claude-darkBorder/70 border-claude-border/70 dark:bg-claude-darkBg/40 bg-claude-bg/60 px-3 py-2">
-        <div className="flex items-start gap-2">
-          <InformationCircleIcon className="h-4 w-4 mt-0.5 dark:text-claude-darkTextSecondary text-claude-textSecondary flex-shrink-0" />
+        <div className="flex items-center gap-2">
+          {isError
+            ? <ExclamationTriangleIcon className="h-4 w-4 dark:text-claude-darkTextSecondary text-claude-textSecondary flex-shrink-0" />
+            : <InformationCircleIcon className="h-4 w-4 dark:text-claude-darkTextSecondary text-claude-textSecondary flex-shrink-0" />
+          }
           <div className="text-xs whitespace-pre-wrap dark:text-claude-darkTextSecondary text-claude-textSecondary">
             {content}
           </div>
