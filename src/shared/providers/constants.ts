@@ -52,7 +52,7 @@ export const OpenClawProviderId = {
   Anthropic: 'anthropic',
   OpenAI: 'openai',
   DeepSeek: 'deepseek',
-  Qwen: 'qwen',
+  Qwen: 'qwen-portal', // OpenClaw normalizes 'qwen' → 'qwen-portal'; use canonical ID to avoid config diff loop
   Zai: 'zai', // OpenClaw official provider ID for Zhipu/GLM
   Volcengine: 'volcengine',
   VolcenginePlan: 'volcengine-plan', // OpenClaw coding plan provider for Volcengine
@@ -481,13 +481,12 @@ class ProviderRegistryImpl {
     const orderedProviders = [...priority, ...china, ...global];
     const unique = [...new Set(orderedProviders)];
 
-    // Move ollama to the end, then append custom last
+    // Move ollama to the end (custom providers are appended dynamically by Settings)
     const ollamaIdx = unique.indexOf(ProviderName.Ollama);
     if (ollamaIdx !== -1) {
       unique.splice(ollamaIdx, 1);
     }
     unique.push(ProviderName.Ollama);
-    unique.push(ProviderName.Custom);
     return unique;
   }
 }
