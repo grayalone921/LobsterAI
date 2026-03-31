@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useSelector } from 'react-redux';
-import { RootState } from '../../store';
+import { selectCurrentSession, selectIsStreaming, selectRemoteManaged, selectSkills } from '../../store/selectors/coworkSelectors';
 import { i18nService } from '../../services/i18n';
 import type { CoworkMessage, CoworkMessageMetadata, CoworkImageAttachment } from '../../types/cowork';
 import type { Skill } from '../../types/skill';
@@ -1118,13 +1118,36 @@ const ThinkingBlock: React.FC<{
   );
 };
 
-export const AssistantTurnBlock: React.FC<{
+interface AssistantTurnBlockProps {
   turn: ConversationTurn;
   resolveLocalFilePath?: (href: string, text: string) => string | null;
   mapDisplayText?: (value: string) => string;
   showTypingIndicator?: boolean;
   showCopyButtons?: boolean;
-}> = ({
+}
+
+const assistantTurnBlockAreEqual = (
+  prev: AssistantTurnBlockProps,
+  next: AssistantTurnBlockProps,
+): boolean => {
+  if (prev.turn.id !== next.turn.id) return false;
+  if (prev.turn.assistantItems.length !== next.turn.assistantItems.length) return false;
+  if (prev.showTypingIndicator !== next.showTypingIndicator) return false;
+  if (prev.showCopyButtons !== next.showCopyButtons) return false;
+  if (prev.resolveLocalFilePath !== next.resolveLocalFilePath) return false;
+  if (prev.mapDisplayText !== next.mapDisplayText) return false;
+  // Compare last item content (the actively streaming one)
+  const prevLast = prev.turn.assistantItems[prev.turn.assistantItems.length - 1];
+  const nextLast = next.turn.assistantItems[next.turn.assistantItems.length - 1];
+  if (prevLast !== nextLast) {
+    const prevContent = prevLast?.type === 'assistant' ? prevLast.message.content : '';
+    const nextContent = nextLast?.type === 'assistant' ? nextLast.message.content : '';
+    if (prevContent !== nextContent) return false;
+  }
+  return true;
+};
+
+export const AssistantTurnBlock = React.memo<AssistantTurnBlockProps>(({
   turn,
   resolveLocalFilePath,
   mapDisplayText,
@@ -1274,7 +1297,7 @@ export const AssistantTurnBlock: React.FC<{
       </div>
     </div>
   );
-};
+}, assistantTurnBlockAreEqual);
 
 const CoworkSessionDetail: React.FC<CoworkSessionDetailProps> = ({
   onManageSkills,
@@ -1287,10 +1310,10 @@ const CoworkSessionDetail: React.FC<CoworkSessionDetailProps> = ({
   updateBadge,
 }) => {
   const isMac = window.electron.platform === 'darwin';
-  const currentSession = useSelector((state: RootState) => state.cowork.currentSession);
-  const isStreaming = useSelector((state: RootState) => state.cowork.isStreaming);
-  const remoteManaged = useSelector((state: RootState) => state.cowork.remoteManaged);
-  const skills = useSelector((state: RootState) => state.skill.skills);
+  const currentSession = useSelector(selectCurrentSession);
+  const isStreaming = useSelector(selectIsStreaming);
+  const remoteManaged = useSelector(selectRemoteManaged);
+  const skills = useSelector(selectSkills);
   const detailRootRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
@@ -1864,13 +1887,16 @@ const CoworkSessionDetail: React.FC<CoworkSessionDetailProps> = ({
       container.scrollTop = container.scrollHeight;
       setIsScrollable(container.scrollHeight > container.clientHeight);
     }
-    // Sync turn index to last when auto-scrolled to bottom
+    // Sync turn index to last when auto-scrolled to bottom — guard to avoid
+    // unnecessary state updates (and cascading re-renders) on every streaming tick
     if (turns.length > 0) {
       const lastIndex = turns.length - 1;
-      currentTurnIndexRef.current = lastIndex;
-      setCurrentTurnIndex(lastIndex);
+      if (currentTurnIndexRef.current !== lastIndex) {
+        currentTurnIndexRef.current = lastIndex;
+        setCurrentTurnIndex(lastIndex);
+      }
     }
-  }, [currentSession?.messages?.length, lastMessageContent, isStreaming, shouldAutoScroll, turns.length]);
+  }, [currentSession?.messages?.length, lastMessageContent, isStreaming, shouldAutoScroll]);
 
 
   if (!currentSession) {
